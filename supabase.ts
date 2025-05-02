@@ -1,76 +1,45 @@
 import { createClient } from '@supabase/supabase-js';
-import { User } from '@shared/schema';
 
-// Initialize Supabase client
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+// Initialize Supabase client for server-side use
+const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Missing Supabase credentials');
+let supabase: ReturnType<typeof createClient> | null = null;
+try {
+  if (supabaseUrl && supabaseAnonKey) {
+    supabase = createClient(supabaseUrl, supabaseAnonKey);
+  } else {
+    console.warn('Missing Supabase credentials in environment variables');
+  }
+} catch (error) {
+  console.error('Failed to initialize Supabase client:', error);
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Function to fetch professional profile data 
+export async function fetchProfessionalProfile(userId: number) {
+  if (!supabase) {
+    console.warn('Supabase client not initialized, skipping profile fetch');
+    return null;
+  }
 
-// Authentication helpers
-export async function signUp(email: string, password: string, fullName: string) {
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: { full_name: fullName }
+  try {
+    const { data, error } = await supabase
+      .from('professional_profiles')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+    
+    if (error) {
+      console.warn('Error fetching professional profile:', error);
+      return null;
     }
-  });
-  
-  return { data, error };
-}
-
-export async function signIn(email: string, password: string) {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password
-  });
-  
-  return { data, error };
-}
-
-export async function signOut() {
-  const { error } = await supabase.auth.signOut();
-  return { error };
-}
-
-export async function getCurrentUser() {
-  const { data, error } = await supabase.auth.getUser();
-  return { user: data?.user, error };
-}
-
-// User profile helpers
-export async function getUserProfile() {
-  const { user, error: authError } = await getCurrentUser();
-  
-  if (authError || !user) {
-    return { profile: null, error: authError };
+    
+    return data;
+  } catch (error) {
+    console.warn('Exception while fetching professional profile:', error);
+    return null;
   }
-  
-  const { data, error } = await supabase
-    .from('users')
-    .select('*')
-    .eq('id', user.id)
-    .single();
-  
-  return { profile: data as User, error };
 }
 
-export async function updateUserProfile(updates: Partial<User>) {
-  const { user, error: authError } = await getCurrentUser();
-  
-  if (authError || !user) {
-    return { error: authError };
-  }
-  
-  const { data, error } = await supabase
-    .from('users')
-    .update(updates)
-    .eq('id', user.id);
-  
-  return { data, error };
-}
+// Export supabase instance
+export { supabase };

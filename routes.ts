@@ -9,20 +9,23 @@ import {
   insertUserSchema, 
   insertDocumentSchema, 
   insertSignerSchema,
+  insertAgreementSchema,
   users,
   documents,
-  signers
+  signers,
+  agreements
 } from "@shared/schema";
 import { registerSignRoutes } from "./routes/sign";
 import { registerPackageRoutes } from "./routes/packages";
 import { registerUploadRoutes } from "./routes/upload";
 import { registerPaymentRoutes } from "./routes/payment";
+import { registerAgreementRoutes } from "./routes/agreements";
 
 if (!process.env.STRIPE_SECRET_KEY) {
   console.warn('Missing STRIPE_SECRET_KEY. Stripe functionality will not work properly.');
 }
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: "2023-10-16" as Stripe.ApiVersion,
+  apiVersion: "2023-10-16",
 }) : null;
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -31,6 +34,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerPackageRoutes(app);
   registerUploadRoutes(app);
   registerPaymentRoutes(app);
+  registerAgreementRoutes(app);
   // Auth routes
   app.post("/api/auth/signup", async (req, res) => {
     try {
@@ -51,8 +55,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...validatedData,
         password: hashedPassword,
         tier: "free",
-        liveQuota: 0,
-        liveUsed: 0
+        liveQuota: 0
       });
       
       // Remove password from response

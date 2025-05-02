@@ -2,12 +2,15 @@ import {
   users, 
   documents, 
   signers, 
+  agreements,
   type User, 
   type InsertUser, 
   type Document, 
   type InsertDocument,
   type Signer,
-  type InsertSigner 
+  type InsertSigner,
+  type Agreement,
+  type InsertAgreement
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -41,6 +44,14 @@ export interface IStorage {
   getDocumentSigners(documentId: number): Promise<Signer[]>;
   createSigner(signer: InsertSigner): Promise<Signer>;
   updateSigner(id: number, signer: Partial<Signer>): Promise<Signer>;
+  
+  // Agreement methods
+  getUserAgreements(userId: number, page: number, limit: number): Promise<{ agreements: Agreement[], total: number }>;
+  getAgreement(id: number): Promise<Agreement | undefined>;
+  createAgreement(agreement: InsertAgreement): Promise<Agreement>;
+  updateAgreement(id: number, agreement: Partial<Agreement>): Promise<Agreement>;
+  markAgreementLinkSent(id: number): Promise<Agreement>;
+  deleteAgreement(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -251,6 +262,84 @@ export class DatabaseStorage implements IStorage {
     }
     
     return signer;
+  }
+  
+  // Agreement methods
+  async getUserAgreements(userId: number, page: number, limit: number): Promise<{ agreements: Agreement[], total: number }> {
+    // Get total count
+    const countResult = await db.select({ count: sql`count(*)` }).from(agreements).where(eq(agreements.userId, userId));
+    const total = Number(countResult[0]?.count || 0);
+    
+    // Get paginated results
+    const startIndex = (page - 1) * limit;
+    const agreementsList = await db.select()
+      .from(agreements)
+      .where(eq(agreements.userId, userId))
+      .orderBy(desc(agreements.createdAt))
+      .limit(limit)
+      .offset(startIndex);
+    
+    return { agreements: agreementsList, total };
+  }
+
+  async getAgreement(id: number): Promise<Agreement | undefined> {
+    const [agreement] = await db.select().from(agreements).where(eq(agreements.id, id));
+    return agreement;
+  }
+
+  async createAgreement(insertAgreement: InsertAgreement): Promise<Agreement> {
+    // Generate the signer link based on the agreement ID that will be created
+    const [agreement] = await db.insert(agreements)
+      .values({
+        ...insertAgreement,
+        status: "pending",
+        linkSent: false
+      })
+      .returning();
+    
+    // Update the agreement with the signer link
+    const signerLink = `/client-engagement?agreementId=${agreement.id}`;
+    return this.updateAgreement(agreement.id, { signerLink });
+  }
+
+  async updateAgreement(id: number, agreementUpdate: Partial<Agreement>): Promise<Agreement> {
+    // If setting status, update updatedAt
+    const updates = {
+      ...agreementUpdate,
+      updatedAt: new Date()
+    };
+    
+    const [agreement] = await db.update(agreements)
+      .set(updates)
+      .where(eq(agreements.id, id))
+      .returning();
+    
+    if (!agreement) {
+      throw new Error("Agreement not found");
+    }
+    
+    return agreement;
+  }
+
+  async markAgreementLinkSent(id: number): Promise<Agreement> {
+    const [agreement] = await db.update(agreements)
+      .set({
+        linkSent: true,
+        linkSentAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(agreements.id, id))
+      .returning();
+    
+    if (!agreement) {
+      throw new Error("Agreement not found");
+    }
+    
+    return agreement;
+  }
+
+  async deleteAgreement(id: number): Promise<void> {
+    await db.delete(agreements).where(eq(agreements.id, id));
   }
 }
 
